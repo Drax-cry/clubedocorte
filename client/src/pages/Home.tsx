@@ -159,10 +159,23 @@ function MovementsPage() {
 }
 
 function SettingsPage() {
+  const utils = trpc.useUtils();
   const catalog = trpc.catalog.list.useQuery();
   const services = (catalog.data?.services ?? []) as CatalogItem[];
   const products = (catalog.data?.products ?? []) as CatalogItem[];
-  return <section><PageHeader eyebrow="Configuração" title="Definições" description="Consulte o catálogo ativo e as regras da operação." /><div className="two-column"><div className="section-card"><div className="card-heading"><div><span className="eyebrow">Serviços ativos</span><h2>Preços configurados</h2></div><Scissors size={18} /></div><div className="table-list">{services.map(item => <div className="expense-row" key={item.id}><div className="catalog-icon"><Scissors size={16} /></div><div><strong>{item.name}</strong><small>Serviço disponível no quiosque</small></div><b>{currency.format(item.price)}</b></div>)}</div></div><div className="section-card"><div className="card-heading"><div><span className="eyebrow">Produtos ativos</span><h2>Produtos vendidos</h2></div><Package size={18} /></div><div className="table-list">{products.map(item => <div className="expense-row" key={item.id}><div className="catalog-icon"><Package size={16} /></div><div><strong>{item.name}</strong><small>Produto disponível no quiosque</small></div><b>{currency.format(item.price)}</b></div>)}</div></div></div></section>;
+  const updateService = trpc.admin.updateService.useMutation({ onSuccess: () => { toast.success("Serviço atualizado"); utils.catalog.list.invalidate(); }, onError: error => toast.error(error.message) });
+  const updateProduct = trpc.admin.updateProduct.useMutation({ onSuccess: () => { toast.success("Produto atualizado"); utils.catalog.list.invalidate(); }, onError: error => toast.error(error.message) });
+  const editItem = (item: CatalogItem, type: "service" | "product") => {
+    const name = window.prompt(type === "service" ? "Nome do serviço" : "Nome do produto", item.name)?.trim();
+    if (!name) return;
+    const priceInput = window.prompt("Preço (€)", String(item.price).replace(".", ","));
+    if (priceInput === null) return;
+    const price = Number(priceInput.replace(",", "."));
+    if (!Number.isFinite(price) || price <= 0) return toast.error("Indique um preço válido");
+    if (type === "service") updateService.mutate({ id: item.id, name, price });
+    else updateProduct.mutate({ id: item.id, name, price });
+  };
+  return <section><PageHeader eyebrow="Configuração" title="Definições" description="Edite os preços atuais sem alterar os valores históricos dos atendimentos." /><div className="two-column"><div className="section-card"><div className="card-heading"><div><span className="eyebrow">Serviços ativos</span><h2>Preços configurados</h2></div><Scissors size={18} /></div><div className="table-list">{services.map(item => <div className="expense-row" key={item.id}><div className="catalog-icon"><Scissors size={16} /></div><div><strong>{item.name}</strong><small>Preço atual: {currency.format(item.price)}</small></div><b>{currency.format(item.price)}</b><button className="text-button" onClick={() => editItem(item, "service")}>Editar</button></div>)}</div></div><div className="section-card"><div className="card-heading"><div><span className="eyebrow">Produtos ativos</span><h2>Produtos vendidos</h2></div><Package size={18} /></div><div className="table-list">{products.map(item => <div className="expense-row" key={item.id}><div className="catalog-icon"><Package size={16} /></div><div><strong>{item.name}</strong><small>Preço atual: {currency.format(item.price)}</small></div><b>{currency.format(item.price)}</b><button className="text-button" onClick={() => editItem(item, "product")}>Editar</button></div>)}</div></div></div></section>;
 }
 
 function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) { return <div className="page-heading"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>; }

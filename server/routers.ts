@@ -206,6 +206,16 @@ export const appRouter = router({
       const result = await query("SELECT id, name FROM expense_categories WHERE active=true ORDER BY name");
       return result.rows;
     }),
+    updateService: adminProcedure.input(z.object({ id: z.string().uuid(), name: z.string().min(2).max(120), price: z.number().positive().max(100000) })).mutation(async ({ ctx, input }) => {
+      await query("UPDATE services SET name=$1, price=$2, updated_at=now() WHERE id=$3", [input.name, input.price, input.id]);
+      await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'update','service',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(input)]);
+      return { success: true };
+    }),
+    updateProduct: adminProcedure.input(z.object({ id: z.string().uuid(), name: z.string().min(2).max(120), price: z.number().positive().max(100000) })).mutation(async ({ ctx, input }) => {
+      await query("UPDATE products SET name=$1, price=$2, updated_at=now() WHERE id=$3", [input.name, input.price, input.id]);
+      await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'update','product',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(input)]);
+      return { success: true };
+    }),
   }),
 });
 
