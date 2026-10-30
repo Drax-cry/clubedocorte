@@ -17,6 +17,7 @@
 ## Dashboard e gestão administrativa
 
 - [ ] Mostrar faturação, despesas, lucro líquido, atendimentos, cortes, serviços, produtos e comissões acumuladas, com filtros Hoje, Ontem, Últimos 7 dias, Este mês, Mês anterior, Este ano e período personalizado.
+- [ ] Mostrar no Dashboard a média diária de faturação e a média diária de lucro líquido do período selecionado.
 - [ ] Permitir adicionar/editar/ativar/desativar barbeiros, consultar faturação, serviços, produtos, comissões pendentes/pagas e valor a receber.
 - [ ] Permitir definir comissão individual, comissão de produtos opcional e percentagem específica de produtos, sem modificar operações antigas.
 - [ ] Permitir registar pagamentos de comissão como saídas financeiras distintas, sem descontar a comissão duas vezes no lucro.

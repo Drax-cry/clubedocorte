@@ -150,11 +150,16 @@ export const appRouter = router({
       const accruedCommission = toMoney(commissions.rows[0]?.commissions);
       const paidCommission = toMoney(paidCommissions.rows[0]?.paid);
       const commissionCost = Math.max(accruedCommission, paidCommission);
+      const periodDays = Math.max(1, Math.ceil((new Date(input.end).getTime() - new Date(input.start).getTime()) / 86_400_000));
+      const profit = revenue - expenseTotal - commissionCost;
       return {
         revenue,
         expenses: expenseTotal,
         commissionPayments: paidCommission,
-        profit: revenue - expenseTotal - commissionCost,
+        profit,
+        averageRevenue: revenue / periodDays,
+        averageProfit: profit / periodDays,
+        periodDays,
         appointments: Number(row.appointments),
         services: Number(row.services),
         products: Number(row.products),
