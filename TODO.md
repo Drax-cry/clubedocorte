@@ -29,7 +29,6 @@
 
 ## Relatórios, exportação e arquivo
 
-- [ ] Criar relatórios de faturação diária/semanal/mensal/anual, despesas, lucro, cortes, serviços/produtos mais vendidos, desempenho individual, comissões e comparação entre barbeiros.
 - [ ] Usar gráficos claros e permitir exportação para PDF e Excel/CSV.
 - [ ] Permitir arquivar anos anteriores apenas por ação explícita do administrador; calcular faturação, despesas, lucro, cortes, barbeiros, comissões, serviços, produtos, meses e métodos de pagamento.
 - [ ] Gerar backup completo detalhado para download antes de qualquer eliminação e nunca eliminar automaticamente sem autorização.
