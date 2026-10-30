@@ -24,6 +24,10 @@ export function getPgPool() {
   if (!process.env.POSTGRES_URL) return null;
   if (!pool) {
     const url = new URL(process.env.POSTGRES_URL);
+    const ca = process.env.POSTGRES_CA_CERT?.replace(/\\n/g, "\n");
+    const ssl = ca
+      ? { ca, rejectUnauthorized: true }
+      : { rejectUnauthorized: process.env.POSTGRES_SSL_REJECT_UNAUTHORIZED === "true" };
     const config = resolvedHost
       ? {
           host: resolvedHost,
@@ -33,7 +37,7 @@ export function getPgPool() {
           password: decodeURIComponent(url.password),
         }
       : { connectionString: process.env.POSTGRES_URL };
-    pool = new Pool({ ...config, ssl: { rejectUnauthorized: false }, max: 8, idleTimeoutMillis: 20_000, connectionTimeoutMillis: 8_000 });
+    pool = new Pool({ ...config, ssl, max: 8, idleTimeoutMillis: 20_000, connectionTimeoutMillis: 8_000 });
   }
   return pool;
 }
@@ -86,6 +90,7 @@ export async function ensureDatabase() {
       if (!password) throw new Error("ADMIN_INITIAL_PASSWORD não está configurado");
       const existing = await db.query<{ id: string }>("SELECT id FROM app_users WHERE username = $1 LIMIT 1", ["admin"]);
       if (existing.rowCount === 0) {
+        if (password.length < 10) throw new Error("ADMIN_INITIAL_PASSWORD deve ter pelo menos 10 caracteres");
         const hash = await bcrypt.hash(password, 12);
         await db.query(
           "INSERT INTO app_users (username, password_hash, role, must_change_password) VALUES ($1, $2, 'admin', true)",

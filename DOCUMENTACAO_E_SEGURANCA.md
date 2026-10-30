@@ -71,7 +71,7 @@ O custo de comissão usa a comissão acumulada dos atendimentos e considera paga
 - A área Admin exige sessão válida e `role = admin` no backend.
 - Mutations administrativas exigem cookie de sessão e token CSRF no cabeçalho `x-csrf-token`.
 - Sessões expiram após 14 dias e o token guardado na base é um hash, não o token original.
-- A palavra-passe é hashada com bcrypt e não é enviada para o frontend.
+- A palavra-passe é hashada com bcrypt com custo 12, exige pelo menos 10 caracteres quando a conta Admin é criada e não é enviada para o frontend.
 - A primeira palavra-passe é alterada no primeiro acesso.
 - O login possui limitação básica de tentativas por IP e nome de utilizador.
 
@@ -110,9 +110,9 @@ Esta proteção deve ser adicionada antes de considerar o sistema pronto para In
 
 O limite de login está dentro do processo Node. Reiniciar a aplicação limpa o contador e, com várias instâncias, cada instância teria o próprio limite. Em VPS com uma instância é aceitável como primeira barreira, mas para produção recomenda-se Redis ou rate limiting no Nginx/Caddy/firewall.
 
-### Risco médio — TLS PostgreSQL permissivo
+### TLS PostgreSQL
 
-O pool usa `ssl: { rejectUnauthorized: false }` para compatibilidade com o Session Pooler. Isto cifra a ligação, mas não valida totalmente a cadeia do certificado. Para produção, configurar o certificado CA oficial da Supabase e usar `rejectUnauthorized: true`, guardando o CA como segredo/ficheiro protegido.
+O pool aceita `POSTGRES_CA_CERT` e, quando este valor existe, usa `rejectUnauthorized: true` para validar a cadeia do certificado da Supabase. Na VPS, configurar `POSTGRES_SSL_REJECT_UNAUTHORIZED=true` e, idealmente, enviar também o CA oficial como segredo protegido. O Preview pode permanecer permissivo quando o Session Pooler fornece uma cadeia que não está disponível no ambiente local; essa exceção não deve ser usada na VPS sem a validação do CA.
 
 ### Risco médio — confiança no cabeçalho de IP
 
@@ -132,6 +132,8 @@ Nunca guardar estes valores no Git, no frontend, no README ou em screenshots:
 
 ```text
 POSTGRES_URL=postgresql://...
+POSTGRES_CA_CERT=-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----
+POSTGRES_SSL_REJECT_UNAUTHORIZED=true
 ADMIN_INITIAL_PASSWORD=...
 ```
 
