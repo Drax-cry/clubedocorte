@@ -175,6 +175,23 @@ export const appRouter = router({
     }),
   }),
 
+  movements: router({
+    list: adminReadProcedure.input(period).query(async ({ input }) => {
+      const result = await query(`
+        SELECT id, 'entrada' AS type, sold_at AS "occurredAt", payment_method_name AS "paymentMethod",
+          total::float AS amount, 'Atendimento' AS description, barber_name AS "barberName"
+        FROM (SELECT s.*, b.name AS barber_name FROM sales s JOIN barbers b ON b.id=s.barber_id) sales_view
+        WHERE sold_at >= $1 AND sold_at < $2
+        UNION ALL
+        SELECT id, 'saída' AS type, expense_date AS "occurredAt", payment_method_name AS "paymentMethod",
+          amount::float AS amount, description, NULL AS "barberName"
+        FROM expenses WHERE expense_date >= $1 AND expense_date < $2
+        ORDER BY "occurredAt" DESC
+      `, [input.start, input.end]);
+      return result.rows;
+    }),
+  }),
+
   admin: router({
     barbers: adminReadProcedure.query(async () => {
       const result = await query(`SELECT b.id, b.name, b.commission_rate AS \"commissionRate\", b.product_commission_enabled AS \"productCommissionEnabled\", b.product_commission_rate AS \"productCommissionRate\", b.active, COALESCE(SUM(s.total),0)::float AS revenue, COUNT(s.id)::int AS appointments FROM barbers b LEFT JOIN sales s ON s.barber_id=b.id GROUP BY b.id ORDER BY b.name`);
