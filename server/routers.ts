@@ -147,15 +147,18 @@ export const appRouter = router({
       const row = sales.rows[0] ?? { revenue: "0", appointments: "0", services: "0", products: "0" };
       const revenue = toMoney(row.revenue);
       const expenseTotal = toMoney(expenses.rows[0]?.expenses);
+      const accruedCommission = toMoney(commissions.rows[0]?.commissions);
+      const paidCommission = toMoney(paidCommissions.rows[0]?.paid);
+      const commissionCost = Math.max(accruedCommission, paidCommission);
       return {
         revenue,
         expenses: expenseTotal,
-        commissionPayments: toMoney(paidCommissions.rows[0]?.paid),
-        profit: revenue - expenseTotal - toMoney(paidCommissions.rows[0]?.paid),
+        commissionPayments: paidCommission,
+        profit: revenue - expenseTotal - commissionCost,
         appointments: Number(row.appointments),
         services: Number(row.services),
         products: Number(row.products),
-        commissions: toMoney(commissions.rows[0]?.commissions),
+        commissions: accruedCommission,
         bestSellers: details.rows,
       };
     }),
