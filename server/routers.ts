@@ -69,7 +69,7 @@ export const appRouter = router({
   catalog: router({
     list: publicProcedure.query(async () => {
       const [barbers, services, products, paymentMethods] = await Promise.all([
-        query("SELECT id, name, commission_rate AS \"commissionRate\", product_commission_enabled AS \"productCommissionEnabled\", product_commission_rate AS \"productCommissionRate\", active FROM barbers WHERE active = true ORDER BY name"),
+        query("SELECT id, name, active FROM barbers WHERE active = true ORDER BY name"),
         query("SELECT id, name, price::float AS price, active FROM services WHERE active = true ORDER BY name"),
         query("SELECT id, name, price::float AS price, active FROM products WHERE active = true ORDER BY name"),
         query("SELECT id, name FROM payment_methods WHERE active = true ORDER BY sort_order, name"),
