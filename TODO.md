@@ -29,6 +29,7 @@
 
 ## Relatórios, exportação e arquivo
 
+- [ ] Em Relatórios, comparar este mês com o anterior, este ano com o anterior e acompanhar a evolução de cada barbeiro com faturação e atendimentos.
 - [ ] Usar gráficos claros e permitir exportação para PDF e Excel/CSV.
 - [ ] Permitir arquivar anos anteriores apenas por ação explícita do administrador; calcular faturação, despesas, lucro, cortes, barbeiros, comissões, serviços, produtos, meses e métodos de pagamento.
 - [ ] Gerar backup completo detalhado para download antes de qualquer eliminação e nunca eliminar automaticamente sem autorização.

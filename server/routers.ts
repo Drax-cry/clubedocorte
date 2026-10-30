@@ -166,6 +166,35 @@ export const appRouter = router({
       const result = await query<{ day: string; revenue: number; expenses: number }>(`SELECT to_char(d.day, 'DD/MM') AS day, COALESCE((SELECT SUM(total) FROM sales WHERE sold_at >= d.day AND sold_at < d.day + interval '1 day'),0)::float AS revenue, COALESCE((SELECT SUM(amount) FROM expenses WHERE expense_date >= d.day AND expense_date < d.day + interval '1 day'),0)::float AS expenses FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d(day) ORDER BY d.day`, [input.start, input.end]);
       return result.rows;
     }),
+    comparison: adminReadProcedure.query(async () => {
+      const now = new Date();
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const currentYearStart = new Date(now.getFullYear(), 0, 1);
+      const previousYearStart = new Date(now.getFullYear() - 1, 0, 1);
+      const nextYearStart = new Date(now.getFullYear() + 1, 0, 1);
+      const totals = (start: Date, end: Date) => query<{ revenue: string; appointments: string; expenses: string }>(
+        `SELECT COALESCE((SELECT SUM(total) FROM sales WHERE sold_at >= $1 AND sold_at < $2),0)::text revenue,
+                COALESCE((SELECT COUNT(*) FROM sales WHERE sold_at >= $1 AND sold_at < $2),0)::text appointments,
+                COALESCE((SELECT SUM(amount) FROM expenses WHERE expense_date >= $1 AND expense_date < $2),0)::text expenses`, [start, end]);
+      const [currentMonth, previousMonth, currentYear, previousYear, barbers] = await Promise.all([
+        totals(currentMonthStart, nextMonthStart),
+        totals(previousMonthStart, currentMonthStart),
+        totals(currentYearStart, nextYearStart),
+        totals(previousYearStart, currentYearStart),
+        query(`SELECT b.id, b.name,
+          COALESCE(SUM(s.total) FILTER (WHERE s.sold_at >= $1 AND s.sold_at < $2),0)::float AS "currentMonthRevenue",
+          COALESCE(COUNT(s.id) FILTER (WHERE s.sold_at >= $1 AND s.sold_at < $2),0)::int AS "currentMonthAppointments",
+          COALESCE(SUM(s.total) FILTER (WHERE s.sold_at >= $3 AND s.sold_at < $1),0)::float AS "previousMonthRevenue",
+          COALESCE(COUNT(s.id) FILTER (WHERE s.sold_at >= $3 AND s.sold_at < $1),0)::int AS "previousMonthAppointments",
+          COALESCE(SUM(s.total) FILTER (WHERE s.sold_at >= $4 AND s.sold_at < $5),0)::float AS "currentYearRevenue",
+          COALESCE(COUNT(s.id) FILTER (WHERE s.sold_at >= $4 AND s.sold_at < $5),0)::int AS "currentYearAppointments"
+          FROM barbers b LEFT JOIN sales s ON s.barber_id = b.id GROUP BY b.id ORDER BY "currentMonthRevenue" DESC, b.name`, [currentMonthStart, nextMonthStart, previousMonthStart, currentYearStart, nextYearStart]),
+      ]);
+      const shape = (result: { rows: Array<{ revenue: string; appointments: string; expenses: string }> }) => ({ revenue: toMoney(result.rows[0]?.revenue), appointments: Number(result.rows[0]?.appointments ?? 0), expenses: toMoney(result.rows[0]?.expenses) });
+      return { currentMonth: shape(currentMonth), previousMonth: shape(previousMonth), currentYear: shape(currentYear), previousYear: shape(previousYear), barbers: barbers.rows };
+    }),
   }),
 
   expenses: router({
