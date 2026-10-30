@@ -163,19 +163,26 @@ function SettingsPage() {
   const catalog = trpc.catalog.list.useQuery();
   const services = (catalog.data?.services ?? []) as CatalogItem[];
   const products = (catalog.data?.products ?? []) as CatalogItem[];
+  const [tab, setTab] = useState<"services" | "products">("products");
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
   const updateService = trpc.admin.updateService.useMutation({ onSuccess: () => { toast.success("Serviço atualizado"); utils.catalog.list.invalidate(); }, onError: error => toast.error(error.message) });
   const updateProduct = trpc.admin.updateProduct.useMutation({ onSuccess: () => { toast.success("Produto atualizado"); utils.catalog.list.invalidate(); }, onError: error => toast.error(error.message) });
+  const createService = trpc.admin.createService.useMutation({ onSuccess: () => { toast.success("Serviço adicionado"); setName(""); setPrice(""); utils.catalog.list.invalidate(); }, onError: error => toast.error(error.message) });
+  const createProduct = trpc.admin.createProduct.useMutation({ onSuccess: () => { toast.success("Produto adicionado"); setName(""); setPrice(""); utils.catalog.list.invalidate(); }, onError: error => toast.error(error.message) });
   const editItem = (item: CatalogItem, type: "service" | "product") => {
-    const name = window.prompt(type === "service" ? "Nome do serviço" : "Nome do produto", item.name)?.trim();
-    if (!name) return;
+    const nextName = window.prompt(type === "service" ? "Nome do serviço" : "Nome do produto", item.name)?.trim();
+    if (!nextName) return;
     const priceInput = window.prompt("Preço (€)", String(item.price).replace(".", ","));
     if (priceInput === null) return;
-    const price = Number(priceInput.replace(",", "."));
-    if (!Number.isFinite(price) || price <= 0) return toast.error("Indique um preço válido");
-    if (type === "service") updateService.mutate({ id: item.id, name, price });
-    else updateProduct.mutate({ id: item.id, name, price });
+    const nextPrice = Number(priceInput.replace(",", "."));
+    if (!Number.isFinite(nextPrice) || nextPrice <= 0) return toast.error("Indique um preço válido");
+    if (type === "service") updateService.mutate({ id: item.id, name: nextName, price: nextPrice });
+    else updateProduct.mutate({ id: item.id, name: nextName, price: nextPrice });
   };
-  return <section><PageHeader eyebrow="Configuração" title="Definições" description="Edite os preços atuais sem alterar os valores históricos dos atendimentos." /><div className="two-column"><div className="section-card"><div className="card-heading"><div><span className="eyebrow">Serviços ativos</span><h2>Preços configurados</h2></div><Scissors size={18} /></div><div className="table-list">{services.map(item => <div className="expense-row" key={item.id}><div className="catalog-icon"><Scissors size={16} /></div><div><strong>{item.name}</strong><small>Preço atual: {currency.format(item.price)}</small></div><b>{currency.format(item.price)}</b><button className="text-button" onClick={() => editItem(item, "service")}>Editar</button></div>)}</div></div><div className="section-card"><div className="card-heading"><div><span className="eyebrow">Produtos ativos</span><h2>Produtos vendidos</h2></div><Package size={18} /></div><div className="table-list">{products.map(item => <div className="expense-row" key={item.id}><div className="catalog-icon"><Package size={16} /></div><div><strong>{item.name}</strong><small>Preço atual: {currency.format(item.price)}</small></div><b>{currency.format(item.price)}</b><button className="text-button" onClick={() => editItem(item, "product")}>Editar</button></div>)}</div></div></div></section>;
+  const submit = (event: React.FormEvent) => { event.preventDefault(); const parsedPrice = Number(price.replace(",", ".")); if (name.trim().length < 2 || !Number.isFinite(parsedPrice) || parsedPrice <= 0) return toast.error("Preencha nome e preço válido"); if (tab === "services") createService.mutate({ name: name.trim(), price: parsedPrice }); else createProduct.mutate({ name: name.trim(), price: parsedPrice }); };
+  const items = tab === "services" ? services : products;
+  return <section><PageHeader eyebrow="Configuração" title="Definições" description="Adicione e edite o catálogo usado pelos barbeiros no registo de atendimento." /><div className="section-card catalog-settings"><div className="segmented catalog-tabs"><button className={tab === "services" ? "active" : ""} onClick={() => setTab("services")}><Scissors size={14} /> Serviços <span>{services.length}</span></button><button className={tab === "products" ? "active" : ""} onClick={() => setTab("products")}><Package size={14} /> Produtos <span>{products.length}</span></button></div><form className="catalog-add-form" onSubmit={submit}><div><span className="eyebrow">Novo {tab === "services" ? "serviço" : "produto"}</span><strong>Adicionar ao catálogo</strong></div><input required value={name} onChange={event => setName(event.target.value)} placeholder={tab === "services" ? "Ex.: Corte infantil" : "Ex.: Spray fixador"} /><input required min="0.01" step="0.01" type="number" value={price} onChange={event => setPrice(event.target.value)} placeholder="Preço (€)" /><button className="primary-button" disabled={createService.isPending || createProduct.isPending}><Plus size={16} /> Adicionar</button></form><div className="catalog-list-heading"><div><span className="eyebrow">Catálogo ativo</span><h2>{tab === "services" ? "Serviços" : "Produtos"}</h2></div><span className="soft-label">Os valores antigos ficam preservados nos atendimentos</span></div><div className="table-list">{items.length === 0 ? <EmptyState text={`Ainda não existem ${tab === "services" ? "serviços" : "produtos"}.`} /> : items.map(item => <div className="expense-row" key={item.id}><div className="catalog-icon">{tab === "services" ? <Scissors size={16} /> : <Package size={16} />}</div><div><strong>{item.name}</strong><small>Preço atual no quiosque</small></div><b>{currency.format(item.price)}</b><button className="text-button" onClick={() => editItem(item, tab === "services" ? "service" : "product")}>Editar</button></div>)}</div></div></section>;
 }
 
 function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) { return <div className="page-heading"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>; }

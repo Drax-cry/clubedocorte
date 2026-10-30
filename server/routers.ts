@@ -211,9 +211,19 @@ export const appRouter = router({
       await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'update','service',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(input)]);
       return { success: true };
     }),
+    createService: adminProcedure.input(z.object({ name: z.string().min(2).max(120), price: z.number().positive().max(100000) })).mutation(async ({ ctx, input }) => {
+      const result = await query<{ id: string }>("INSERT INTO services (name, price) VALUES ($1,$2) RETURNING id", [input.name, input.price]);
+      await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','service',$2,$3::jsonb)", [ctx.user.id, result.rows[0].id, JSON.stringify(input)]);
+      return { success: true };
+    }),
     updateProduct: adminProcedure.input(z.object({ id: z.string().uuid(), name: z.string().min(2).max(120), price: z.number().positive().max(100000) })).mutation(async ({ ctx, input }) => {
       await query("UPDATE products SET name=$1, price=$2, updated_at=now() WHERE id=$3", [input.name, input.price, input.id]);
       await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'update','product',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(input)]);
+      return { success: true };
+    }),
+    createProduct: adminProcedure.input(z.object({ name: z.string().min(2).max(120), price: z.number().positive().max(100000) })).mutation(async ({ ctx, input }) => {
+      const result = await query<{ id: string }>("INSERT INTO products (name, price) VALUES ($1,$2) RETURNING id", [input.name, input.price]);
+      await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','product',$2,$3::jsonb)", [ctx.user.id, result.rows[0].id, JSON.stringify(input)]);
       return { success: true };
     }),
   }),
