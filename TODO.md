@@ -8,6 +8,7 @@
 
 ## Registo diário de serviços e vendas
 
+- [ ] A página inicial deve ser o modo barbeiro sem palavra-passe: antes de registar, o barbeiro identifica-se selecionando o próprio nome; a palavra-passe fica reservada à área Admin do proprietário, acessível pelo botão Admin no topo.
 - [ ] Apresentar barbeiros ativos em cartões, com nomes configuráveis pelo administrador e sem nomes fixos no código.
 - [ ] Permitir selecionar vários serviços e produtos no mesmo atendimento, mostrar preço, alterar quantidade, calcular subtotais/totais automaticamente e adicionar observações.
 - [ ] Guardar data/hora automaticamente, permitir Dinheiro, Cartão, MB WAY e Outro e apresentar resumo antes de confirmar.

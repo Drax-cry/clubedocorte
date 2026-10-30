@@ -67,7 +67,7 @@ export const appRouter = router({
   }),
 
   catalog: router({
-    list: protectedProcedure.query(async () => {
+    list: publicProcedure.query(async () => {
       const [barbers, services, products, paymentMethods] = await Promise.all([
         query("SELECT id, name, commission_rate AS \"commissionRate\", product_commission_enabled AS \"productCommissionEnabled\", product_commission_rate AS \"productCommissionRate\", active FROM barbers WHERE active = true ORDER BY name"),
         query("SELECT id, name, price::float AS price, active FROM services WHERE active = true ORDER BY name"),
@@ -79,7 +79,7 @@ export const appRouter = router({
   }),
 
   sales: router({
-    create: secureProcedure
+    create: publicProcedure
       .input(z.object({
         barberId: z.string().uuid(),
         services: z.array(saleItem).max(30),
@@ -88,7 +88,7 @@ export const appRouter = router({
         notes: z.string().max(1000).optional(),
       }).refine(value => value.services.length > 0 || value.products.length > 0, "Adicione pelo menos um serviço ou produto"))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "barber" && ctx.user.barberId !== input.barberId) {
+        if (ctx.user?.role === "barber" && ctx.user.barberId !== input.barberId) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Só pode registar atendimentos do seu barbeiro" });
         }
         return transaction(async client => {
@@ -113,7 +113,7 @@ export const appRouter = router({
           const saleResult = await client.query<{ id: string }>(
             `INSERT INTO sales (barber_id, payment_method_name, notes, services_total, products_total, total, service_commission_rate, product_commission_rate, service_commission, product_commission, created_by)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-            [input.barberId, input.paymentMethod, input.notes ?? null, servicesTotal, productsTotal, servicesTotal + productsTotal, serviceRate, productRate, serviceCommission, productCommission, ctx.user.id]);
+            [input.barberId, input.paymentMethod, input.notes ?? null, servicesTotal, productsTotal, servicesTotal + productsTotal, serviceRate, productRate, serviceCommission, productCommission, ctx.user?.id ?? null]);
           const saleId = saleResult.rows[0].id;
           for (const row of serviceRows) {
             const total = Number(row.data!.price) * row.item.quantity;
@@ -123,7 +123,7 @@ export const appRouter = router({
             const total = Number(row.data!.price) * row.item.quantity;
             await client.query(`INSERT INTO sale_items (sale_id, item_type, catalog_id, name_snapshot, unit_price, quantity, line_total, commission_rate, commission_total) VALUES ($1,'product',$2,$3,$4,$5,$6,$7,$8)`, [saleId, row.data!.id, row.data!.name, row.data!.price, row.item.quantity, total, productRate, total * productRate / 100]);
           }
-          await client.query(`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','sale',$2,$3::jsonb)`, [ctx.user.id, saleId, JSON.stringify({ barberId: input.barberId, total: servicesTotal + productsTotal })]);
+          await client.query(`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','sale',$2,$3::jsonb)`, [ctx.user?.id ?? null, saleId, JSON.stringify({ barberId: input.barberId, total: servicesTotal + productsTotal })]);
           return { id: saleId, total: servicesTotal + productsTotal };
         });
       }),
