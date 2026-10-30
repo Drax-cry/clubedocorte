@@ -86,3 +86,4 @@ button, input, textarea, select { outline: none; }
 .admin-modal p { margin: 0 0 22px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .admin-modal .auth-form { max-width: none; }
 .income-icon { color: var(--emerald); background: var(--emerald-soft); }.positive { color: var(--emerald-dark); }.report-stats { margin: 20px 0 0; grid-template-columns: repeat(2, 1fr); }.report-stats > div:nth-child(2) { border-right: 0; }.report-stats > div:nth-child(-n+2) { border-bottom: 1px solid #d8e1dc; }.report-grid { align-items: stretch; }
+.dashboard-filter { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }.dashboard-filter select, .dashboard-filter input { border: 1px solid #d6e6e0; border-radius: 8px; background: #fff; color: var(--emerald-dark); padding: 9px 10px; font-size: 11px; font-weight: 700; }.dashboard-filter input { color: var(--ink-soft); font-weight: 500; }
