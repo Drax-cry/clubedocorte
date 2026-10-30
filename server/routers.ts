@@ -137,11 +137,12 @@ export const appRouter = router({
 
   dashboard: router({
     summary: adminReadProcedure.input(period).query(async ({ input }) => {
-      const [sales, expenses, details, commissions] = await Promise.all([
+      const [sales, expenses, details, commissions, paidCommissions] = await Promise.all([
         query<{ revenue: string; appointments: string; services: string; products: string }>(`SELECT COALESCE(SUM(total),0)::text revenue, COUNT(*)::text appointments, COALESCE(SUM((SELECT COALESCE(SUM(quantity),0) FROM sale_items si WHERE si.sale_id=s.id AND si.item_type='service')),0)::text services, COALESCE(SUM((SELECT COALESCE(SUM(quantity),0) FROM sale_items si WHERE si.sale_id=s.id AND si.item_type='product')),0)::text products FROM sales s WHERE sold_at >= $1 AND sold_at < $2`, [input.start, input.end]),
         query<{ expenses: string }>("SELECT COALESCE(SUM(amount),0)::text expenses FROM expenses WHERE expense_date >= $1 AND expense_date < $2", [input.start, input.end]),
         query<{ name: string; total: number }>(`SELECT si.name_snapshot AS name, SUM(si.line_total)::float AS total FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE s.sold_at >= $1 AND s.sold_at < $2 GROUP BY si.name_snapshot ORDER BY total DESC LIMIT 6`, [input.start, input.end]),
         query<{ commissions: string }>("SELECT COALESCE(SUM(service_commission + product_commission),0)::text commissions FROM sales WHERE sold_at >= $1 AND sold_at < $2", [input.start, input.end]),
+        query<{ paid: string }>("SELECT COALESCE(SUM(amount),0)::text paid FROM commission_payments WHERE paid_at >= $1 AND paid_at < $2", [input.start, input.end]),
       ]);
       const row = sales.rows[0] ?? { revenue: "0", appointments: "0", services: "0", products: "0" };
       const revenue = toMoney(row.revenue);
@@ -149,7 +150,8 @@ export const appRouter = router({
       return {
         revenue,
         expenses: expenseTotal,
-        profit: revenue - expenseTotal,
+        commissionPayments: toMoney(paidCommissions.rows[0]?.paid),
+        profit: revenue - expenseTotal - toMoney(paidCommissions.rows[0]?.paid),
         appointments: Number(row.appointments),
         services: Number(row.services),
         products: Number(row.products),
