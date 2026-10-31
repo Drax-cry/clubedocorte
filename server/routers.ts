@@ -52,10 +52,10 @@ export const appRouter = router({
         ctx.res.cookie(CSRF_COOKIE, session.csrfToken, { httpOnly: false, secure: true, sameSite: "none", path: "/", maxAge: 1000 * 60 * 60 * 24 * 14 });
         return { user, csrfToken: session.csrfToken };
       }),
-    logout: secureProcedure.mutation(async ({ ctx }) => {
+    logout: protectedProcedure.mutation(async ({ ctx }) => {
       await deleteSession(getSessionToken(ctx));
-      ctx.res.clearCookie(APP_SESSION_COOKIE, { httpOnly: true, secure: true, sameSite: "none", path: "/" });
-      ctx.res.clearCookie(CSRF_COOKIE, { httpOnly: false, secure: true, sameSite: "none", path: "/" });
+      ctx.res.clearCookie(APP_SESSION_COOKIE, { maxAge: -1, httpOnly: true, secure: true, sameSite: "none", path: "/" });
+      ctx.res.clearCookie(CSRF_COOKIE, { maxAge: -1, httpOnly: false, secure: true, sameSite: "none", path: "/" });
       return { success: true };
     }),
     changePassword: secureProcedure
@@ -235,6 +235,13 @@ export const appRouter = router({
     barbers: adminReadProcedure.query(async () => {
       const result = await query(`SELECT b.id, b.name, b.commission_rate AS \"commissionRate\", b.product_commission_enabled AS \"productCommissionEnabled\", b.product_commission_rate AS \"productCommissionRate\", b.active, COALESCE(SUM(s.total),0)::float AS revenue, COUNT(s.id)::int AS appointments FROM barbers b LEFT JOIN sales s ON s.barber_id=b.id GROUP BY b.id ORDER BY b.name`);
       return result.rows;
+    }),
+    createBarber: adminProcedure.input(z.object({ name: z.string().trim().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionRate: z.number().min(0).max(100) })).mutation(async ({ ctx, input }) => {
+      const duplicate = await query<{ id: string }>("SELECT id FROM barbers WHERE lower(name) = lower($1) LIMIT 1", [input.name]);
+      if (duplicate.rowCount) throw new Error("Já existe um barbeiro com este nome");
+      const result = await query<{ id: string }>("INSERT INTO barbers (name, commission_rate, product_commission_enabled, product_commission_rate) VALUES ($1,$2,$3,$4) RETURNING id", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionRate]);
+      await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','barber',$2,$3::jsonb)", [ctx.user.id, result.rows[0].id, JSON.stringify(input)]);
+      return { id: result.rows[0].id };
     }),
     updateBarber: adminProcedure.input(z.object({ id: z.string().uuid(), name: z.string().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionRate: z.number().min(0).max(100), active: z.boolean() })).mutation(async ({ ctx, input }) => {
       await query("UPDATE barbers SET name=$1, commission_rate=$2, product_commission_enabled=$3, product_commission_rate=$4, active=$5, updated_at=now() WHERE id=$6", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionRate, input.active, input.id]);
