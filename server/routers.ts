@@ -7,6 +7,7 @@ import { authenticate, changePassword, createSession, deleteSession, query, tran
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const saleItem = z.object({ id: z.string().uuid(), quantity: z.number().int().min(1).max(99) });
+const productSaleItem = saleItem.extend({ unitPrice: z.number().finite().min(0).max(100000).optional() });
 const period = z.object({ start: z.string().datetime(), end: z.string().datetime() });
 
 function getSessionToken(ctx: { req: { headers: { cookie?: string } } }) {
@@ -83,7 +84,7 @@ export const appRouter = router({
       .input(z.object({
         barberId: z.string().uuid(),
         services: z.array(saleItem).max(30),
-        products: z.array(saleItem).max(30),
+        products: z.array(productSaleItem).max(30),
         paymentMethod: z.string().min(1).max(80),
         notes: z.string().max(1000).optional(),
       }).refine(value => value.services.length > 0 || value.products.length > 0, "Adicione pelo menos um serviço ou produto"))
@@ -105,7 +106,11 @@ export const appRouter = router({
           const productRows = input.products.map(item => ({ item, data: catalog.get(item.id) })).filter(row => row.data?.kind === "product");
           if (serviceRows.length !== input.services.length || productRows.length !== input.products.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Um serviço ou produto já não está disponível" });
           const servicesTotal = serviceRows.reduce((sum, row) => sum + Number(row.data!.price) * row.item.quantity, 0);
-          const productsTotal = productRows.reduce((sum, row) => sum + Number(row.data!.price) * row.item.quantity, 0);
+          const productPrice = (row: (typeof productRows)[number]) => {
+            const raw = row.item.unitPrice ?? Number(row.data!.price);
+            return Math.round(raw * 100) / 100;
+          };
+          const productsTotal = productRows.reduce((sum, row) => sum + productPrice(row) * row.item.quantity, 0);
           const serviceRate = Number(barber.commission_rate);
           const productRate = barber.product_commission_enabled ? Number(barber.product_commission_rate) : 0;
           const serviceCommission = servicesTotal * serviceRate / 100;
@@ -120,10 +125,11 @@ export const appRouter = router({
             await client.query(`INSERT INTO sale_items (sale_id, item_type, catalog_id, name_snapshot, unit_price, quantity, line_total, commission_rate, commission_total) VALUES ($1,'service',$2,$3,$4,$5,$6,$7,$8)`, [saleId, row.data!.id, row.data!.name, row.data!.price, row.item.quantity, total, serviceRate, total * serviceRate / 100]);
           }
           for (const row of productRows) {
-            const total = Number(row.data!.price) * row.item.quantity;
-            await client.query(`INSERT INTO sale_items (sale_id, item_type, catalog_id, name_snapshot, unit_price, quantity, line_total, commission_rate, commission_total) VALUES ($1,'product',$2,$3,$4,$5,$6,$7,$8)`, [saleId, row.data!.id, row.data!.name, row.data!.price, row.item.quantity, total, productRate, total * productRate / 100]);
+            const unitPrice = productPrice(row);
+            const total = unitPrice * row.item.quantity;
+            await client.query(`INSERT INTO sale_items (sale_id, item_type, catalog_id, name_snapshot, unit_price, quantity, line_total, commission_rate, commission_total) VALUES ($1,'product',$2,$3,$4,$5,$6,$7,$8)`, [saleId, row.data!.id, row.data!.name, unitPrice, row.item.quantity, total, productRate, total * productRate / 100]);
           }
-          await client.query(`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','sale',$2,$3::jsonb)`, [ctx.user?.id ?? null, saleId, JSON.stringify({ barberId: input.barberId, total: servicesTotal + productsTotal })]);
+          await client.query(`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','sale',$2,$3::jsonb)`, [ctx.user?.id ?? null, saleId, JSON.stringify({ barberId: input.barberId, total: servicesTotal + productsTotal, productPrices: productRows.map(row => ({ id: row.data!.id, price: productPrice(row) })) })]);
           return { id: saleId, total: servicesTotal + productsTotal };
         });
       }),
