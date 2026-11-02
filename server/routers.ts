@@ -239,8 +239,24 @@ export const appRouter = router({
 
   admin: router({
     barbers: adminReadProcedure.query(async () => {
-      const result = await query(`SELECT b.id, b.name, b.commission_rate AS \"commissionRate\", b.product_commission_enabled AS \"productCommissionEnabled\", b.product_commission_rate AS \"productCommissionRate\", b.active, COALESCE(SUM(s.total),0)::float AS revenue, COUNT(s.id)::int AS appointments FROM barbers b LEFT JOIN sales s ON s.barber_id=b.id GROUP BY b.id ORDER BY b.name`);
-      return result.rows;
+      const [barbers, items] = await Promise.all([
+        query(`SELECT b.id, b.name, b.commission_rate AS "commissionRate", b.product_commission_enabled AS "productCommissionEnabled", b.product_commission_rate AS "productCommissionRate", b.active,
+          COALESCE(SUM(s.total),0)::float AS revenue, COUNT(s.id)::int AS appointments,
+          COALESCE(SUM(s.services_total),0)::float AS "serviceRevenue", COALESCE(SUM(s.products_total),0)::float AS "productRevenue",
+          COALESCE(SUM(s.service_commission),0)::float AS "serviceCommission", COALESCE(SUM(s.product_commission),0)::float AS "productCommission",
+          COALESCE(SUM((SELECT SUM(quantity) FROM sale_items si WHERE si.sale_id=s.id AND si.item_type='service')),0)::int AS "serviceUnits",
+          COALESCE(SUM((SELECT SUM(quantity) FROM sale_items si WHERE si.sale_id=s.id AND si.item_type='product')),0)::int AS "productUnits"
+          FROM barbers b LEFT JOIN sales s ON s.barber_id=b.id GROUP BY b.id ORDER BY b.name`),
+        query(`SELECT s.barber_id AS "barberId", si.item_type AS type, si.name_snapshot AS name, SUM(si.quantity)::int AS quantity, SUM(si.line_total)::float AS total
+          FROM sale_items si JOIN sales s ON s.id=si.sale_id GROUP BY s.barber_id, si.item_type, si.name_snapshot ORDER BY s.barber_id, si.item_type, quantity DESC`),
+      ]);
+      const itemMap = new Map<string, { services: unknown[]; products: unknown[] }>();
+      for (const row of items.rows as Array<{ barberId: string; type: "service" | "product"; name: string; quantity: number; total: number }>) {
+        const current = itemMap.get(row.barberId) ?? { services: [], products: [] };
+        (row.type === "service" ? current.services : current.products).push({ name: row.name, quantity: row.quantity, total: row.total });
+        itemMap.set(row.barberId, current);
+      }
+      return (barbers.rows as Array<{ id: string }>).map(row => ({ ...row, serviceItems: itemMap.get(row.id)?.services ?? [], productItems: itemMap.get(row.id)?.products ?? [] }));
     }),
     createBarber: adminProcedure.input(z.object({ name: z.string().trim().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionRate: z.number().min(0).max(100) })).mutation(async ({ ctx, input }) => {
       const duplicate = await query<{ id: string }>("SELECT id FROM barbers WHERE lower(name) = lower($1) LIMIT 1", [input.name]);

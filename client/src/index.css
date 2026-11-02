@@ -145,3 +145,8 @@ button, input, textarea, select { outline: none; }
 
 .date-range-separator { color: var(--muted); font-size: 11px; }
 @media (max-width: 740px) { .dashboard-filter .date-range-separator { display: none; }.dashboard-filter input[type="date"] { min-width: 0; flex: 1 1 130px; } }
+
+.barber-performance { align-items: start; }.barber-performance small + small { margin-top: 3px; }.barber-top-items { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; color: #53746f; font-size: 10px; }.barber-top-items span { padding: 4px 6px; border-radius: 5px; background: #eaf4f1; }.product-commission-badge { margin-left: -7px; background: #edf5f8; color: #23617a; }
+@media (max-width: 740px) { .barber-performance { grid-template-columns: auto minmax(0,1fr); }.barber-performance > b { grid-column: 2; grid-row: 1; justify-self: start; margin-top: 2px; }.barber-top-items { flex-direction: column; align-items: flex-start; }.product-commission-badge { margin-left: 0; } }
+
+.barbers-table-card .table-head, .barbers-table-card .table-line { grid-template-columns: minmax(150px,1.35fr) .65fr .9fr 1fr 1fr .65fr auto auto; }
