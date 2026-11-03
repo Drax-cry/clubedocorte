@@ -86,10 +86,15 @@ export const appRouter = router({
         products: z.array(saleItem).max(30),
         paymentMethod: z.string().min(1).max(80),
         notes: z.string().max(1000).optional(),
+        soldAt: z.string().datetime().optional(),
       }).refine(value => value.services.length > 0 || value.products.length > 0, "Adicione pelo menos um serviço ou produto"))
       .mutation(async ({ ctx, input }) => {
         if (ctx.user?.role === "barber" && ctx.user.barberId !== input.barberId) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Só pode registar atendimentos do seu barbeiro" });
+        }
+        const soldAt = input.soldAt ? new Date(input.soldAt) : new Date();
+        if (Number.isNaN(soldAt.getTime()) || soldAt.getTime() > Date.now() + 60_000) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "A data do atendimento não pode ser futura" });
         }
         return transaction(async client => {
           const barberResult = await client.query<{ id: string; commission_rate: string; product_commission_enabled: boolean; product_commission_rate: string }>("SELECT id, commission_rate, product_commission_enabled, product_commission_rate FROM barbers WHERE id = $1 AND active = true", [input.barberId]);
@@ -115,9 +120,9 @@ export const appRouter = router({
           const serviceCommission = servicesTotal * serviceRate / 100;
           const productCommission = productsTotal * productRate / 100;
           const saleResult = await client.query<{ id: string }>(
-            `INSERT INTO sales (barber_id, payment_method_name, notes, services_total, products_total, total, service_commission_rate, product_commission_rate, service_commission, product_commission, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-            [input.barberId, input.paymentMethod, input.notes ?? null, servicesTotal, productsTotal, servicesTotal + productsTotal, serviceRate, productRate, serviceCommission, productCommission, ctx.user?.id ?? null]);
+            `INSERT INTO sales (barber_id, sold_at, payment_method_name, notes, services_total, products_total, total, service_commission_rate, product_commission_rate, service_commission, product_commission, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+            [input.barberId, soldAt, input.paymentMethod, input.notes ?? null, servicesTotal, productsTotal, servicesTotal + productsTotal, serviceRate, productRate, serviceCommission, productCommission, ctx.user?.id ?? null]);
           const saleId = saleResult.rows[0].id;
           for (const row of serviceRows) {
             const unitPrice = unitPriceFor(row);

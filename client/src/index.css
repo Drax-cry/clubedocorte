@@ -150,3 +150,5 @@ button, input, textarea, select { outline: none; }
 @media (max-width: 740px) { .barber-performance { grid-template-columns: auto minmax(0,1fr); }.barber-performance > b { grid-column: 2; grid-row: 1; justify-self: start; margin-top: 2px; }.barber-top-items { flex-direction: column; align-items: flex-start; }.product-commission-badge { margin-left: 0; } }
 
 .barbers-table-card .table-head, .barbers-table-card .table-line { grid-template-columns: minmax(150px,1.35fr) .65fr .9fr 1fr 1fr .65fr auto auto; }
+
+.date-card { display: grid; gap: 14px; }.date-field { max-width: 360px; display: grid; gap: 7px; color: var(--muted); font-size: 10px; }.date-field input { color: var(--ink); font-size: 12px; }.field-hint { color: var(--muted); font-size: 10px; margin-top: -5px; }
