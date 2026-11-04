@@ -245,7 +245,7 @@ export const appRouter = router({
   admin: router({
     barbers: adminReadProcedure.query(async () => {
       const [barbers, items] = await Promise.all([
-        query(`SELECT b.id, b.name, b.commission_rate AS "commissionRate", b.product_commission_enabled AS "productCommissionEnabled", b.product_commission_rate AS "productCommissionRate", b.active,
+        query(`SELECT b.id, b.name, b.commission_rate::float AS "commissionRate", b.product_commission_enabled AS "productCommissionEnabled", b.product_commission_rate::float AS "productCommissionRate", b.active,
           COALESCE(SUM(s.total),0)::float AS revenue, COUNT(s.id)::int AS appointments,
           COALESCE(SUM(s.services_total),0)::float AS "serviceRevenue", COALESCE(SUM(s.products_total),0)::float AS "productRevenue",
           COALESCE(SUM(s.service_commission),0)::float AS "serviceCommission", COALESCE(SUM(s.product_commission),0)::float AS "productCommission",
