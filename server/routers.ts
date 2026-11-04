@@ -275,6 +275,22 @@ export const appRouter = router({
       await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'update','barber',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(input)]);
       return { success: true };
     }),
+    removeBarber: adminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+      return transaction(async client => {
+        const barber = await client.query<{ id: string; name: string }>("SELECT id, name FROM barbers WHERE id=$1 FOR UPDATE", [input.id]);
+        if (!barber.rowCount) throw new TRPCError({ code: "NOT_FOUND", message: "Barbeiro não encontrado" });
+        const usage = await client.query<{ sales: string; payments: string }>("SELECT (SELECT COUNT(*) FROM sales WHERE barber_id=$1)::text AS sales, (SELECT COUNT(*) FROM commission_payments WHERE barber_id=$1)::text AS payments", [input.id]);
+        const hasHistory = Number(usage.rows[0]?.sales ?? 0) > 0 || Number(usage.rows[0]?.payments ?? 0) > 0;
+        if (hasHistory) {
+          await client.query("UPDATE barbers SET active=false, updated_at=now() WHERE id=$1", [input.id]);
+          await client.query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'deactivate','barber',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify({ reason: "Histórico financeiro preservado" })]);
+          return { deleted: false, deactivated: true };
+        }
+        await client.query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, before_data) VALUES ($1,'delete','barber',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(barber.rows[0])]);
+        await client.query("DELETE FROM barbers WHERE id=$1", [input.id]);
+        return { deleted: true, deactivated: false };
+      });
+    }),
     categories: adminReadProcedure.query(async () => {
       const result = await query("SELECT id, name FROM expense_categories WHERE active=true ORDER BY name");
       return result.rows;
