@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS revenue_goal numeric(12,2) NOT NULL DEFAULT 0 CHECK (revenue_goal >= 0);
 ALTER TABLE barbers ADD COLUMN IF NOT EXISTS goal_commission_rate numeric(5,2) NOT NULL DEFAULT 0 CHECK (goal_commission_rate >= 0 AND goal_commission_rate <= 100);
+ALTER TABLE barbers ADD COLUMN IF NOT EXISTS product_commission_eur numeric(12,2) NOT NULL DEFAULT 0 CHECK (product_commission_eur >= 0);
 
 CREATE UNIQUE INDEX IF NOT EXISTS services_name_unique_idx ON services (name);
 CREATE UNIQUE INDEX IF NOT EXISTS products_name_unique_idx ON products (name);

@@ -97,7 +97,7 @@ export const appRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "A data do atendimento não pode ser futura" });
         }
         return transaction(async client => {
-          const barberResult = await client.query<{ id: string; commission_rate: string; product_commission_enabled: boolean; product_commission_rate: string; revenue_goal: string; goal_commission_rate: string }>("SELECT id, commission_rate, product_commission_enabled, product_commission_rate, revenue_goal, goal_commission_rate FROM barbers WHERE id = $1 AND active = true", [input.barberId]);
+          const barberResult = await client.query<{ id: string; commission_rate: string; product_commission_enabled: boolean; product_commission_eur: string; revenue_goal: string; goal_commission_rate: string }>("SELECT id, commission_rate, product_commission_enabled, product_commission_eur, revenue_goal, goal_commission_rate FROM barbers WHERE id = $1 AND active = true", [input.barberId]);
           const barber = barberResult.rows[0];
           if (!barber) throw new TRPCError({ code: "BAD_REQUEST", message: "Barbeiro inválido" });
           const ids = [...input.services.map(item => item.id), ...input.products.map(item => item.id)];
@@ -122,9 +122,9 @@ export const appRouter = router({
           const goalRate = Number(barber.goal_commission_rate ?? 0);
           const reachedGoal = revenueGoal > 0 && monthlyRevenueBefore >= revenueGoal;
           const serviceRate = reachedGoal && goalRate > baseServiceRate ? goalRate : baseServiceRate;
-          const productRate = barber.product_commission_enabled ? Number(barber.product_commission_rate) : 0;
+          const productRate = barber.product_commission_enabled ? Number(barber.product_commission_eur) : 0;
           const serviceCommission = servicesTotal * serviceRate / 100;
-          const productCommission = productsTotal * productRate / 100;
+          const productCommission = productRows.reduce((sum, row) => sum + productRate * row.item.quantity, 0);
           const saleResult = await client.query<{ id: string }>(
             `INSERT INTO sales (barber_id, sold_at, payment_method_name, notes, services_total, products_total, total, service_commission_rate, product_commission_rate, service_commission, product_commission, created_by)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
@@ -138,7 +138,7 @@ export const appRouter = router({
           for (const row of productRows) {
             const unitPrice = unitPriceFor(row);
             const total = unitPrice * row.item.quantity;
-            await client.query(`INSERT INTO sale_items (sale_id, item_type, catalog_id, name_snapshot, unit_price, quantity, line_total, commission_rate, commission_total) VALUES ($1,'product',$2,$3,$4,$5,$6,$7,$8)`, [saleId, row.data!.id, row.data!.name, unitPrice, row.item.quantity, total, productRate, total * productRate / 100]);
+            await client.query(`INSERT INTO sale_items (sale_id, item_type, catalog_id, name_snapshot, unit_price, quantity, line_total, commission_rate, commission_total) VALUES ($1,'product',$2,$3,$4,$5,$6,$7,$8)`, [saleId, row.data!.id, row.data!.name, unitPrice, row.item.quantity, total, productRate, productRate * row.item.quantity]);
           }
           await client.query(`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','sale',$2,$3::jsonb)`, [ctx.user?.id ?? null, saleId, JSON.stringify({ barberId: input.barberId, total: servicesTotal + productsTotal, productPrices: productRows.map(row => ({ id: row.data!.id, price: unitPriceFor(row) })), servicePrices: serviceRows.map(row => ({ id: row.data!.id, price: unitPriceFor(row) })) })]);
           return { id: saleId, total: servicesTotal + productsTotal };
@@ -225,7 +225,7 @@ export const appRouter = router({
       return result.rows;
     }),
     create: adminProcedure.input(z.object({ description: z.string().min(2).max(160), category: z.string().min(1).max(80), amount: z.number().positive().max(1000000), date: z.string().datetime(), paymentMethod: z.string().min(1).max(80), notes: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => {
-      const result = await query<{ id: string }>("INSERT INTO expenses (description, category_name, amount, expense_date, payment_method_name, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [input.description, input.category, input.amount, input.date, input.paymentMethod, input.notes ?? null, ctx.user.id]);
+      const result = await query<{ id: string }>("INSERT INTO expenses (description, category_name, amount, expense_date, payment_method_name, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id", [input.description, input.category, input.amount, input.date, input.paymentMethod, input.notes ?? null, ctx.user.id]);
       await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','expense',$2,$3::jsonb)", [ctx.user.id, result.rows[0].id, JSON.stringify(input)]);
       return { id: result.rows[0].id };
     }),
@@ -251,7 +251,7 @@ export const appRouter = router({
   admin: router({
     barbers: adminReadProcedure.query(async () => {
       const [barbers, items] = await Promise.all([
-        query(`SELECT b.id, b.name, b.commission_rate::float AS "commissionRate", b.product_commission_enabled AS "productCommissionEnabled", b.product_commission_rate::float AS "productCommissionRate", b.revenue_goal::float AS "revenueGoal", b.goal_commission_rate::float AS "goalCommissionRate", b.active,
+        query(`SELECT b.id, b.name, b.commission_rate::float AS "commissionRate", b.product_commission_enabled AS "productCommissionEnabled", b.product_commission_rate::float AS "productCommissionRate", b.product_commission_eur::float AS "productCommissionEur", b.revenue_goal::float AS "revenueGoal", b.goal_commission_rate::float AS "goalCommissionRate", b.active,
           COALESCE(SUM(s.total),0)::float AS revenue, COUNT(s.id)::int AS appointments,
           COALESCE(SUM(s.total) FILTER (WHERE s.sold_at >= date_trunc('month', now()) AND s.sold_at < date_trunc('month', now()) + interval '1 month'),0)::float AS "currentMonthRevenue",
           COALESCE((SELECT SUM(cp.amount) FROM commission_payments cp WHERE cp.barber_id=b.id),0)::float AS "paidCommission",
@@ -271,15 +271,15 @@ export const appRouter = router({
       }
       return (barbers.rows as Array<{ id: string }>).map(row => ({ ...row, serviceItems: itemMap.get(row.id)?.services ?? [], productItems: itemMap.get(row.id)?.products ?? [] }));
     }),
-    createBarber: adminProcedure.input(z.object({ name: z.string().trim().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionRate: z.number().min(0).max(100), revenueGoal: z.number().min(0).max(100000000), goalCommissionRate: z.number().min(0).max(100) })).mutation(async ({ ctx, input }) => {
+    createBarber: adminProcedure.input(z.object({ name: z.string().trim().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionEur: z.number().min(0).max(100000), revenueGoal: z.number().min(0).max(100000000), goalCommissionRate: z.number().min(0).max(100) })).mutation(async ({ ctx, input }) => {
       const duplicate = await query<{ id: string }>("SELECT id FROM barbers WHERE lower(name) = lower($1) LIMIT 1", [input.name]);
       if (duplicate.rowCount) throw new Error("Já existe um barbeiro com este nome");
-      const result = await query<{ id: string }>("INSERT INTO barbers (name, commission_rate, product_commission_enabled, product_commission_rate, revenue_goal, goal_commission_rate) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionRate, input.revenueGoal, input.goalCommissionRate]);
+      const result = await query<{ id: string }>("INSERT INTO barbers (name, commission_rate, product_commission_enabled, product_commission_eur, revenue_goal, goal_commission_rate) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionEur, input.revenueGoal, input.goalCommissionRate]);
       await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','barber',$2,$3::jsonb)", [ctx.user.id, result.rows[0].id, JSON.stringify(input)]);
       return { id: result.rows[0].id };
     }),
-    updateBarber: adminProcedure.input(z.object({ id: z.string().uuid(), name: z.string().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionRate: z.number().min(0).max(100), revenueGoal: z.number().min(0).max(100000000), goalCommissionRate: z.number().min(0).max(100), active: z.boolean() })).mutation(async ({ ctx, input }) => {
-      await query("UPDATE barbers SET name=$1, commission_rate=$2, product_commission_enabled=$3, product_commission_rate=$4, revenue_goal=$5, goal_commission_rate=$6, active=$7, updated_at=now() WHERE id=$8", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionRate, input.revenueGoal, input.goalCommissionRate, input.active, input.id]);
+    updateBarber: adminProcedure.input(z.object({ id: z.string().uuid(), name: z.string().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionEur: z.number().min(0).max(100000), revenueGoal: z.number().min(0).max(100000000), goalCommissionRate: z.number().min(0).max(100), active: z.boolean() })).mutation(async ({ ctx, input }) => {
+      await query("UPDATE barbers SET name=$1, commission_rate=$2, product_commission_enabled=$3, product_commission_eur=$4, revenue_goal=$5, goal_commission_rate=$6, active=$7, updated_at=now() WHERE id=$8", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionEur, input.revenueGoal, input.goalCommissionRate, input.active, input.id]);
       await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'update','barber',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(input)]);
       return { success: true };
     }),
