@@ -116,11 +116,11 @@ export const appRouter = router({
           const servicesTotal = serviceRows.reduce((sum, row) => sum + unitPriceFor(row) * row.item.quantity, 0);
           const productsTotal = productRows.reduce((sum, row) => sum + unitPriceFor(row) * row.item.quantity, 0);
           const baseServiceRate = Number(barber.commission_rate);
-          const monthlyRevenueResult = await client.query<{ revenue: string }>("SELECT COALESCE(SUM(total),0)::text AS revenue FROM sales WHERE barber_id=$1 AND sold_at >= date_trunc('month', now()) AND sold_at < date_trunc('month', now()) + interval '1 month'", [input.barberId]);
+          const monthlyRevenueResult = await client.query<{ revenue: string }>("SELECT COALESCE(SUM(total),0)::text AS revenue FROM sales WHERE barber_id=$1 AND sold_at >= date_trunc('month', $2::timestamptz) AND sold_at < date_trunc('month', $2::timestamptz) + interval '1 month'", [input.barberId, soldAt]);
           const monthlyRevenueBefore = Number(monthlyRevenueResult.rows[0]?.revenue ?? 0);
           const revenueGoal = Number(barber.revenue_goal ?? 0);
           const goalRate = Number(barber.goal_commission_rate ?? 0);
-          const reachedGoal = revenueGoal > 0 && monthlyRevenueBefore >= revenueGoal;
+          const reachedGoal = revenueGoal > 0 && monthlyRevenueBefore + servicesTotal + productsTotal >= revenueGoal;
           const serviceRate = reachedGoal && goalRate > baseServiceRate ? goalRate : baseServiceRate;
           const productRate = barber.product_commission_enabled ? Number(barber.product_commission_eur) : 0;
           const serviceCommission = servicesTotal * serviceRate / 100;
