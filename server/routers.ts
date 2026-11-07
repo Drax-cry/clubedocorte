@@ -274,7 +274,7 @@ export const appRouter = router({
     createBarber: adminProcedure.input(z.object({ name: z.string().trim().min(2).max(100), commissionRate: z.number().min(0).max(100), productCommissionEnabled: z.boolean(), productCommissionEur: z.number().min(0).max(100000), revenueGoal: z.number().min(0).max(100000000), goalCommissionRate: z.number().min(0).max(100) })).mutation(async ({ ctx, input }) => {
       const duplicate = await query<{ id: string }>("SELECT id FROM barbers WHERE lower(name) = lower($1) LIMIT 1", [input.name]);
       if (duplicate.rowCount) throw new Error("Já existe um barbeiro com este nome");
-      const result = await query<{ id: string }>("INSERT INTO barbers (name, commission_rate, product_commission_enabled, product_commission_eur, revenue_goal, goal_commission_rate) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionEur, input.revenueGoal, input.goalCommissionRate]);
+      const result = await query<{ id: string }>("INSERT INTO barbers (name, commission_rate, product_commission_enabled, product_commission_eur, revenue_goal, goal_commission_rate) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id", [input.name, input.commissionRate, input.productCommissionEnabled, input.productCommissionEur, input.revenueGoal, input.goalCommissionRate]);
       await query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','barber',$2,$3::jsonb)", [ctx.user.id, result.rows[0].id, JSON.stringify(input)]);
       return { id: result.rows[0].id };
     }),
