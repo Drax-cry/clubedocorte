@@ -154,8 +154,31 @@ INSERT INTO expense_categories (name) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO services (name, price) VALUES
-  ('Corte de cabelo', 12.00), ('Corte degradê', 15.00), ('Barba', 8.00),
-  ('Sobrancelha', 5.00), ('Lavagem', 4.00)
+  ('Acabamento', 5.00),
+  ('Barba', 10.00),
+  ('Barba e sobrancelhas', 13.00),
+  ('Barboterapia', 16.00),
+  ('Corte', 15.00),
+  ('Corte e Barba', 23.00),
+  ('Corte e hidratação', 19.00),
+  ('Corte e sobrancelhas', 19.00),
+  ('Corte + barba + hidratação', 27.00),
+  ('Corte + barba + limpeza de pele', 30.00),
+  ('Corte + barba + sobrancelha + hidratação + limpeza + depilação', 40.00),
+  ('Corte + barba + sobrancelha + limpeza de pele', 34.00),
+  ('Corte + depilação do nariz na cera', 19.00),
+  ('Corte + limpeza de pele', 25.00),
+  ('Corte + limpeza + hidratação', 28.00),
+  ('Corte + sobrancelhas + hidratação', 22.00),
+  ('Corte, barba e sobrancelhas', 26.00),
+  ('Depilação do nariz com cera', 5.00),
+  ('Hidratação no cabelo', 5.00),
+  ('Limpeza Facial', 15.00),
+  ('Mascara black', 8.00),
+  ('Pigmentação barba', 10.00),
+  ('Platinado', 40.00),
+  ('Progressiva', 35.00),
+  ('Sobrancelha Navalha', 5.00)
 ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO products (name, price) VALUES
