@@ -161,3 +161,5 @@ button, input, textarea, select { outline: none; }
 @media (max-width: 740px) { .detail-stat-grid { grid-template-columns: repeat(2, 1fr); }.detail-columns { grid-template-columns: 1fr; }.barber-detail-modal { padding: 24px 18px; } }
 .barber-edit-modal { max-width: 520px; }.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }.secondary-button { border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); padding: 10px 14px; font-weight: 700; cursor: pointer; }.secondary-button:hover { background: var(--wash); }
 .detail-stat-grid-simple { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 520px; }
+.detail-stat-grid-simple { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 680px; }
+@media (max-width: 560px) { .detail-stat-grid-simple { grid-template-columns: 1fr; } }
