@@ -43,3 +43,8 @@
 - [ ] Criar uma aba administrativa “Planos” para adicionar planos com preço e serviços incluídos, associar clientes a cada plano e definir as quantidades contratadas por serviço.
 - [ ] No registo do atendimento, apresentar os separadores Serviços, Produtos e Planos; ao escolher um plano, listar os clientes desse plano e, ao escolher o cliente, mostrar apenas os saldos disponíveis.
 - [ ] Ao consumir um plano, descontar atomicamente apenas as unidades utilizadas, por exemplo, consumir 1 Corte de um cliente com 5 Cortes e 5 Barbas deixa 4 Cortes e 5 Barbas; rejeitar consumos sem saldo e preservar o registo auditável.
+
+## Pagamentos de planos
+- [ ] Dentro da aba Planos, permitir registar vários pagamentos por cliente, com valor, data/hora, método de pagamento e observações, mantendo cada pagamento como entrada financeira auditável.
+- [ ] Somar pagamentos de planos à faturação, lucro, médias e gráfico do Dashboard apenas na data do recebimento; o consumo posterior dos serviços do plano não deve criar nova faturação.
+- [ ] Mostrar no Dashboard o total recebido em planos no período selecionado e a quantidade de clientes ativos com plano; mostrar também o histórico de pagamentos na aba Planos e nos Movimentos.

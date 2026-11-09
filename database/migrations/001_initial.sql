@@ -232,3 +232,17 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS plan_id uuid REFERENCES plans(id);
 CREATE INDEX IF NOT EXISTS plan_clients_plan_idx ON plan_clients(plan_id, active);
 CREATE INDEX IF NOT EXISTS plan_client_items_client_idx ON plan_client_items(client_id, service_id);
 CREATE INDEX IF NOT EXISTS plan_usages_client_idx ON plan_usages(client_id, used_at);
+
+CREATE TABLE IF NOT EXISTS plan_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id uuid NOT NULL REFERENCES plan_clients(id),
+  plan_id uuid NOT NULL REFERENCES plans(id),
+  amount numeric(12,2) NOT NULL CHECK (amount > 0),
+  paid_at timestamptz NOT NULL DEFAULT now(),
+  payment_method_name text NOT NULL,
+  notes text,
+  created_by uuid REFERENCES app_users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS plan_payments_paid_at_idx ON plan_payments(paid_at);
+CREATE INDEX IF NOT EXISTS plan_payments_client_idx ON plan_payments(client_id, paid_at);

@@ -187,15 +187,18 @@ export const appRouter = router({
 
   dashboard: router({
     summary: adminReadProcedure.input(period).query(async ({ input }) => {
-      const [sales, expenses, details, commissions, paidCommissions] = await Promise.all([
+      const [sales, planPayments, planClients, expenses, details, commissions, paidCommissions] = await Promise.all([
         query<{ revenue: string; appointments: string; services: string; products: string }>(`SELECT COALESCE(SUM(total),0)::text revenue, COUNT(*)::text appointments, COALESCE(SUM((SELECT COALESCE(SUM(quantity),0) FROM sale_items si WHERE si.sale_id=s.id AND si.item_type='service')),0)::text services, COALESCE(SUM((SELECT COALESCE(SUM(quantity),0) FROM sale_items si WHERE si.sale_id=s.id AND si.item_type='product')),0)::text products FROM sales s WHERE sold_at >= $1 AND sold_at < $2`, [input.start, input.end]),
+        query<{ planRevenue: string }>(`SELECT COALESCE(SUM(amount),0)::text AS \"planRevenue\" FROM plan_payments WHERE paid_at >= $1 AND paid_at < $2`, [input.start, input.end]),
+        query<{ clients: string }>("SELECT COUNT(*)::text AS clients FROM plan_clients WHERE active=true", []),
         query<{ expenses: string }>("SELECT COALESCE(SUM(amount),0)::text expenses FROM expenses WHERE expense_date >= $1 AND expense_date < $2", [input.start, input.end]),
         query<{ name: string; total: number }>(`SELECT si.name_snapshot AS name, SUM(si.line_total)::float AS total FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE s.sold_at >= $1 AND s.sold_at < $2 GROUP BY si.name_snapshot ORDER BY total DESC LIMIT 6`, [input.start, input.end]),
         query<{ commissions: string }>("SELECT COALESCE(SUM(service_commission + product_commission),0)::text commissions FROM sales WHERE sold_at >= $1 AND sold_at < $2", [input.start, input.end]),
         query<{ paid: string }>("SELECT COALESCE(SUM(amount),0)::text paid FROM commission_payments WHERE paid_at >= $1 AND paid_at < $2", [input.start, input.end]),
       ]);
       const row = sales.rows[0] ?? { revenue: "0", appointments: "0", services: "0", products: "0" };
-      const revenue = toMoney(row.revenue);
+      const planRevenue = toMoney(planPayments.rows[0]?.planRevenue);
+      const revenue = toMoney(row.revenue) + planRevenue;
       const expenseTotal = toMoney(expenses.rows[0]?.expenses);
       const accruedCommission = toMoney(commissions.rows[0]?.commissions);
       const paidCommission = toMoney(paidCommissions.rows[0]?.paid);
@@ -204,6 +207,8 @@ export const appRouter = router({
       const profit = revenue - expenseTotal - commissionCost;
       return {
         revenue,
+        planRevenue,
+        planClients: Number(planClients.rows[0]?.clients ?? 0),
         expenses: expenseTotal,
         commissionPayments: paidCommission,
         profit,
@@ -218,7 +223,7 @@ export const appRouter = router({
       };
     }),
     trend: adminReadProcedure.input(period).query(async ({ input }) => {
-      const result = await query<{ day: string; revenue: number; expenses: number }>(`SELECT to_char(d.day, 'DD/MM') AS day, COALESCE((SELECT SUM(total) FROM sales WHERE sold_at >= d.day AND sold_at < d.day + interval '1 day'),0)::float AS revenue, COALESCE((SELECT SUM(amount) FROM expenses WHERE expense_date >= d.day AND expense_date < d.day + interval '1 day'),0)::float AS expenses FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d(day) ORDER BY d.day`, [input.start, input.end]);
+      const result = await query<{ day: string; revenue: number; expenses: number }>(`SELECT to_char(d.day, 'DD/MM') AS day, (COALESCE((SELECT SUM(total) FROM sales WHERE sold_at >= d.day AND sold_at < d.day + interval '1 day'),0) + COALESCE((SELECT SUM(amount) FROM plan_payments WHERE paid_at >= d.day AND paid_at < d.day + interval '1 day'),0))::float AS revenue, COALESCE((SELECT SUM(amount) FROM expenses WHERE expense_date >= d.day AND expense_date < d.day + interval '1 day'),0)::float AS expenses FROM generate_series($1::date, ($2::date - interval '1 day')::date, interval '1 day') d(day) ORDER BY d.day`, [input.start, input.end]);
       return result.rows;
     }),
     comparison: adminReadProcedure.query(async () => {
@@ -230,7 +235,7 @@ export const appRouter = router({
       const previousYearStart = new Date(now.getFullYear() - 1, 0, 1);
       const nextYearStart = new Date(now.getFullYear() + 1, 0, 1);
       const totals = (start: Date, end: Date) => query<{ revenue: string; appointments: string; expenses: string }>(
-        `SELECT COALESCE((SELECT SUM(total) FROM sales WHERE sold_at >= $1 AND sold_at < $2),0)::text revenue,
+        `SELECT (COALESCE((SELECT SUM(total) FROM sales WHERE sold_at >= $1 AND sold_at < $2),0) + COALESCE((SELECT SUM(amount) FROM plan_payments WHERE paid_at >= $1 AND paid_at < $2),0))::text revenue,
                 COALESCE((SELECT COUNT(*) FROM sales WHERE sold_at >= $1 AND sold_at < $2),0)::text appointments,
                 COALESCE((SELECT SUM(amount) FROM expenses WHERE expense_date >= $1 AND expense_date < $2),0)::text expenses`, [start, end]);
       const [currentMonth, previousMonth, currentYear, previousYear, barbers] = await Promise.all([
@@ -271,6 +276,11 @@ export const appRouter = router({
           total::float AS amount, 'Atendimento' AS description, barber_name AS "barberName"
         FROM (SELECT s.*, b.name AS barber_name FROM sales s JOIN barbers b ON b.id=s.barber_id) sales_view
         WHERE sold_at >= $1 AND sold_at < $2
+        UNION ALL
+        SELECT pp.id, 'entrada' AS type, pp.paid_at AS "occurredAt", pp.payment_method_name AS "paymentMethod",
+          pp.amount::float AS amount, 'Pagamento de plano · ' || pc.name AS description, NULL AS "barberName"
+        FROM plan_payments pp JOIN plan_clients pc ON pc.id=pp.client_id
+        WHERE pp.paid_at >= $1 AND pp.paid_at < $2
         UNION ALL
         SELECT id, 'saída' AS type, expense_date AS "occurredAt", payment_method_name AS "paymentMethod",
           amount::float AS amount, description, NULL AS "barberName"
@@ -330,6 +340,20 @@ export const appRouter = router({
         await client.query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, before_data) VALUES ($1,'delete','barber',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(barber.rows[0])]);
         await client.query("DELETE FROM barbers WHERE id=$1", [input.id]);
         return { deleted: true, deactivated: false };
+      });
+    }),
+    planPayments: adminReadProcedure.query(async () => {
+      const result = await query(`SELECT pp.id, pp.amount::float AS amount, pp.paid_at AS "paidAt", pp.payment_method_name AS "paymentMethod", pp.notes, pc.id AS "clientId", pc.name AS "clientName", p.id AS "planId", p.name AS "planName" FROM plan_payments pp JOIN plan_clients pc ON pc.id=pp.client_id JOIN plans p ON p.id=pp.plan_id ORDER BY pp.paid_at DESC LIMIT 100`);
+      return result.rows;
+    }),
+    createPlanPayment: adminProcedure.input(z.object({ clientId: z.string().uuid(), amount: z.number().positive().max(100000), paidAt: z.string().datetime(), paymentMethod: z.string().min(1).max(80), notes: z.string().max(500).optional() })).mutation(async ({ ctx, input }) => {
+      return transaction(async client => {
+        const clientResult = await client.query<{ id: string; plan_id: string }>("SELECT pc.id, pc.plan_id FROM plan_clients pc JOIN plans p ON p.id=pc.plan_id WHERE pc.id=$1 AND pc.active=true AND p.active=true", [input.clientId]);
+        const planClient = clientResult.rows[0];
+        if (!planClient) throw new TRPCError({ code: "BAD_REQUEST", message: "Cliente de plano inválido" });
+        const payment = await client.query<{ id: string }>("INSERT INTO plan_payments (client_id, plan_id, amount, paid_at, payment_method_name, notes, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [planClient.id, planClient.plan_id, input.amount, input.paidAt, input.paymentMethod, input.notes ?? null, ctx.user.id]);
+        await client.query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','plan_payment',$2,$3::jsonb)", [ctx.user.id, payment.rows[0].id, JSON.stringify(input)]);
+        return { id: payment.rows[0].id };
       });
     }),
     createPlan: adminProcedure.input(z.object({ name: z.string().trim().min(2).max(120), price: z.number().min(0).max(100000), items: z.array(z.object({ serviceId: z.string().uuid(), quantity: z.number().int().min(1).max(999) })).min(1).max(50) })).mutation(async ({ ctx, input }) => {
