@@ -97,10 +97,6 @@ export async function ensureDatabase() {
           ["admin", hash],
         );
       }
-      const barberCount = await db.query<{ count: string }>("SELECT count(*)::text AS count FROM barbers");
-      if (barberCount.rows[0]?.count === "0") {
-        await db.query("INSERT INTO barbers (name, commission_rate) VALUES ('Barbeiro 1', 50), ('Barbeiro 2', 50), ('Barbeiro 3', 50)");
-      }
     })().catch(error => {
       initPromise = null;
       console.error("[PostgreSQL] initialization failed:", error instanceof Error ? error.message : error);
