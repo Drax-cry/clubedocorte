@@ -68,13 +68,25 @@ export const appRouter = router({
 
   catalog: router({
     list: publicProcedure.query(async () => {
-      const [barbers, services, products, paymentMethods] = await Promise.all([
+      const [barbers, services, products, paymentMethods, plans, planItems, planClients, planClientItems] = await Promise.all([
         query("SELECT id, name, active FROM barbers WHERE active = true ORDER BY name"),
         query("SELECT id, name, price::float AS price, active FROM services WHERE active = true ORDER BY name"),
         query("SELECT id, name, price::float AS price, active FROM products WHERE active = true ORDER BY name"),
         query("SELECT id, name FROM payment_methods WHERE active = true ORDER BY sort_order, name"),
+        query("SELECT id, name, price::float AS price FROM plans WHERE active = true ORDER BY name"),
+        query("SELECT plan_id AS \"planId\", service_id AS \"serviceId\", quantity FROM plan_items"),
+        query("SELECT id, plan_id AS \"planId\", name FROM plan_clients WHERE active = true ORDER BY name"),
+        query("SELECT client_id AS \"clientId\", service_id AS \"serviceId\", total_quantity AS \"totalQuantity\", remaining_quantity AS \"remainingQuantity\" FROM plan_client_items WHERE remaining_quantity > 0"),
       ]);
-      return { barbers: barbers.rows, services: services.rows, products: products.rows, paymentMethods: paymentMethods.rows };
+      const planRows = (plans.rows as Array<{ id: string; name: string; price: number }>).map(plan => ({
+        ...plan,
+        items: (planItems.rows as Array<{ planId: string; serviceId: string; quantity: number }>).filter(item => item.planId === plan.id),
+        clients: (planClients.rows as Array<{ id: string; planId: string; name: string }>).filter(client => client.planId === plan.id).map(client => ({
+          ...client,
+          items: (planClientItems.rows as Array<{ clientId: string; serviceId: string; totalQuantity: number; remainingQuantity: number }>).filter(item => item.clientId === client.id),
+        })),
+      }));
+      return { barbers: barbers.rows, services: services.rows, products: products.rows, paymentMethods: paymentMethods.rows, plans: planRows };
     }),
   }),
 
@@ -84,10 +96,11 @@ export const appRouter = router({
         barberId: z.string().uuid(),
         services: z.array(saleItem).max(30),
         products: z.array(saleItem).max(30),
+        planUsage: z.object({ clientId: z.string().uuid(), items: z.array(z.object({ serviceId: z.string().uuid(), quantity: z.number().int().min(1).max(99) })).min(1).max(30) }).optional(),
         paymentMethod: z.string().min(1).max(80),
         notes: z.string().max(1000).optional(),
         soldAt: z.string().datetime().optional(),
-      }).refine(value => value.services.length > 0 || value.products.length > 0, "Adicione pelo menos um serviço ou produto"))
+      }).refine(value => value.services.length > 0 || value.products.length > 0 || Boolean(value.planUsage), "Adicione um serviço, produto ou consumo de plano"))
       .mutation(async ({ ctx, input }) => {
         if (ctx.user?.role === "barber" && ctx.user.barberId !== input.barberId) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Só pode registar atendimentos do seu barbeiro" });
@@ -100,6 +113,22 @@ export const appRouter = router({
           const barberResult = await client.query<{ id: string; commission_rate: string; product_commission_enabled: boolean; product_commission_eur: string; revenue_goal: string; goal_commission_rate: string }>("SELECT id, commission_rate, product_commission_enabled, product_commission_eur, revenue_goal, goal_commission_rate FROM barbers WHERE id = $1 AND active = true", [input.barberId]);
           const barber = barberResult.rows[0];
           if (!barber) throw new TRPCError({ code: "BAD_REQUEST", message: "Barbeiro inválido" });
+          let planUsageRows: Array<{ clientId: string; planId: string; serviceId: string; serviceName: string; quantity: number }> = [];
+          if (input.planUsage) {
+            const clientResult = await client.query<{ id: string; plan_id: string; plan_name: string }>("SELECT pc.id, pc.plan_id, p.name AS plan_name FROM plan_clients pc JOIN plans p ON p.id=pc.plan_id WHERE pc.id=$1 AND pc.active=true AND p.active=true FOR UPDATE", [input.planUsage.clientId]);
+            const planClient = clientResult.rows[0];
+            if (!planClient) throw new TRPCError({ code: "BAD_REQUEST", message: "Cliente do plano inválido" });
+            const requested = new Map<string, number>();
+            for (const item of input.planUsage.items) requested.set(item.serviceId, (requested.get(item.serviceId) ?? 0) + item.quantity);
+            const entitlementResult = await client.query<{ service_id: string; service_name: string; remaining_quantity: number }>("SELECT pci.service_id, s.name AS service_name, pci.remaining_quantity FROM plan_client_items pci JOIN services s ON s.id=pci.service_id WHERE pci.client_id=$1 AND pci.service_id = ANY($2::uuid[]) FOR UPDATE", [planClient.id, [...requested.keys()]]);
+            const entitlements = new Map(entitlementResult.rows.map(row => [row.service_id, row]));
+            for (const [serviceId, quantity] of requested) {
+              const entitlement = entitlements.get(serviceId);
+              if (!entitlement) throw new TRPCError({ code: "BAD_REQUEST", message: "Este serviço não pertence ao plano do cliente" });
+              if (Number(entitlement.remaining_quantity) < quantity) throw new TRPCError({ code: "BAD_REQUEST", message: `Saldo insuficiente para ${entitlement.service_name}` });
+              planUsageRows.push({ clientId: planClient.id, planId: planClient.plan_id, serviceId, serviceName: entitlement.service_name, quantity });
+            }
+          }
           const ids = [...input.services.map(item => item.id), ...input.products.map(item => item.id)];
           const catalogResult = await client.query<{ id: string; name: string; price: string; kind: "service" | "product" }>(
             `SELECT id, name, price::text, 'service'::text AS kind FROM services WHERE id = ANY($1::uuid[]) AND active = true
@@ -126,9 +155,9 @@ export const appRouter = router({
           const serviceCommission = servicesTotal * serviceRate / 100;
           const productCommission = productRows.reduce((sum, row) => sum + productRate * row.item.quantity, 0);
           const saleResult = await client.query<{ id: string }>(
-            `INSERT INTO sales (barber_id, sold_at, payment_method_name, notes, services_total, products_total, total, service_commission_rate, product_commission_rate, service_commission, product_commission, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-            [input.barberId, soldAt, input.paymentMethod, input.notes ?? null, servicesTotal, productsTotal, servicesTotal + productsTotal, serviceRate, productRate, serviceCommission, productCommission, ctx.user?.id ?? null]);
+            `INSERT INTO sales (barber_id, sold_at, payment_method_name, notes, services_total, products_total, total, service_commission_rate, product_commission_rate, service_commission, product_commission, created_by, plan_client_id, plan_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+            [input.barberId, soldAt, input.paymentMethod, input.notes ?? null, servicesTotal, productsTotal, servicesTotal + productsTotal, serviceRate, productRate, serviceCommission, productCommission, ctx.user?.id ?? null, planUsageRows[0]?.clientId ?? null, planUsageRows[0]?.planId ?? null]);
           const saleId = saleResult.rows[0].id;
           for (const row of serviceRows) {
             const unitPrice = unitPriceFor(row);
@@ -140,8 +169,12 @@ export const appRouter = router({
             const total = unitPrice * row.item.quantity;
             await client.query(`INSERT INTO sale_items (sale_id, item_type, catalog_id, name_snapshot, unit_price, quantity, line_total, commission_rate, commission_total) VALUES ($1,'product',$2,$3,$4,$5,$6,$7,$8)`, [saleId, row.data!.id, row.data!.name, unitPrice, row.item.quantity, total, productRate, productRate * row.item.quantity]);
           }
-          await client.query(`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','sale',$2,$3::jsonb)`, [ctx.user?.id ?? null, saleId, JSON.stringify({ barberId: input.barberId, total: servicesTotal + productsTotal, productPrices: productRows.map(row => ({ id: row.data!.id, price: unitPriceFor(row) })), servicePrices: serviceRows.map(row => ({ id: row.data!.id, price: unitPriceFor(row) })) })]);
-          return { id: saleId, total: servicesTotal + productsTotal };
+          for (const usage of planUsageRows) {
+            await client.query("UPDATE plan_client_items SET remaining_quantity = remaining_quantity - $1 WHERE client_id=$2 AND service_id=$3", [usage.quantity, usage.clientId, usage.serviceId]);
+            await client.query("INSERT INTO plan_usages (sale_id, client_id, plan_id, service_id, service_name_snapshot, quantity, used_at) VALUES ($1,$2,$3,$4,$5,$6,$7)", [saleId, usage.clientId, usage.planId, usage.serviceId, usage.serviceName, usage.quantity, soldAt]);
+          }
+          await client.query(`INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','sale',$2,$3::jsonb)`, [ctx.user?.id ?? null, saleId, JSON.stringify({ barberId: input.barberId, total: servicesTotal + productsTotal, planUsage: planUsageRows, productPrices: productRows.map(row => ({ id: row.data!.id, price: unitPriceFor(row) })), servicePrices: serviceRows.map(row => ({ id: row.data!.id, price: unitPriceFor(row) })) })]);
+          return { id: saleId, total: servicesTotal + productsTotal, planUsage: planUsageRows };
         });
       }),
     recent: adminReadProcedure
@@ -297,6 +330,36 @@ export const appRouter = router({
         await client.query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, before_data) VALUES ($1,'delete','barber',$2,$3::jsonb)", [ctx.user.id, input.id, JSON.stringify(barber.rows[0])]);
         await client.query("DELETE FROM barbers WHERE id=$1", [input.id]);
         return { deleted: true, deactivated: false };
+      });
+    }),
+    createPlan: adminProcedure.input(z.object({ name: z.string().trim().min(2).max(120), price: z.number().min(0).max(100000), items: z.array(z.object({ serviceId: z.string().uuid(), quantity: z.number().int().min(1).max(999) })).min(1).max(50) })).mutation(async ({ ctx, input }) => {
+      return transaction(async client => {
+        const duplicate = await client.query("SELECT id FROM plans WHERE lower(name)=lower($1) LIMIT 1", [input.name]);
+        if (duplicate.rowCount) throw new TRPCError({ code: "CONFLICT", message: "Já existe um plano com este nome" });
+        const serviceIds = input.items.map(item => item.serviceId);
+        const services = await client.query("SELECT id FROM services WHERE id=ANY($1::uuid[]) AND active=true", [serviceIds]);
+        if (services.rowCount !== new Set(serviceIds).size) throw new TRPCError({ code: "BAD_REQUEST", message: "Um dos serviços do plano não está disponível" });
+        const plan = await client.query<{ id: string }>("INSERT INTO plans (name, price) VALUES ($1,$2) RETURNING id", [input.name, input.price]);
+        for (const item of input.items) await client.query("INSERT INTO plan_items (plan_id, service_id, quantity) VALUES ($1,$2,$3)", [plan.rows[0].id, item.serviceId, item.quantity]);
+        await client.query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','plan',$2,$3::jsonb)", [ctx.user.id, plan.rows[0].id, JSON.stringify(input)]);
+        return { id: plan.rows[0].id };
+      });
+    }),
+    createPlanClient: adminProcedure.input(z.object({ planId: z.string().uuid(), name: z.string().trim().min(2).max(120), items: z.array(z.object({ serviceId: z.string().uuid(), quantity: z.number().int().min(1).max(999) })).min(1).max(50) })).mutation(async ({ ctx, input }) => {
+      return transaction(async client => {
+        const plan = await client.query("SELECT id FROM plans WHERE id=$1 AND active=true", [input.planId]);
+        if (!plan.rowCount) throw new TRPCError({ code: "NOT_FOUND", message: "Plano não encontrado" });
+        const allowed = await client.query<{ service_id: string; quantity: number }>("SELECT service_id, quantity FROM plan_items WHERE plan_id=$1", [input.planId]);
+        const limits = new Map(allowed.rows.map(item => [item.service_id, Number(item.quantity)]));
+        const requested = new Set<string>();
+        for (const item of input.items) {
+          if (requested.has(item.serviceId) || !limits.has(item.serviceId) || item.quantity > (limits.get(item.serviceId) ?? 0)) throw new TRPCError({ code: "BAD_REQUEST", message: "As quantidades do cliente devem respeitar os serviços do plano" });
+          requested.add(item.serviceId);
+        }
+        const clientResult = await client.query<{ id: string }>("INSERT INTO plan_clients (plan_id, name) VALUES ($1,$2) RETURNING id", [input.planId, input.name]);
+        for (const item of input.items) await client.query("INSERT INTO plan_client_items (client_id, service_id, total_quantity, remaining_quantity) VALUES ($1,$2,$3,$3)", [clientResult.rows[0].id, item.serviceId, item.quantity]);
+        await client.query("INSERT INTO audit_logs (actor_id, action, entity_type, entity_id, after_data) VALUES ($1,'create','plan_client',$2,$3::jsonb)", [ctx.user.id, clientResult.rows[0].id, JSON.stringify(input)]);
+        return { id: clientResult.rows[0].id };
       });
     }),
     categories: adminReadProcedure.query(async () => {

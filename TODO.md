@@ -39,3 +39,7 @@
 
 - [ ] Usar PostgreSQL/Supabase, UUID, NUMERIC/DECIMAL para valores, timestamps com timezone, índices por data/barbeiro/tipo, integridade referencial e transações atómicas.
 - [ ] Manter a interface React/Vite/Tailwind/shadcn/ui/Recharts responsiva, com menu lateral administrativo, formulários simples, tabelas organizadas e sem marcações online/CRM complexo.
+## Planos, clientes e consumos
+- [ ] Criar uma aba administrativa “Planos” para adicionar planos com preço e serviços incluídos, associar clientes a cada plano e definir as quantidades contratadas por serviço.
+- [ ] No registo do atendimento, apresentar os separadores Serviços, Produtos e Planos; ao escolher um plano, listar os clientes desse plano e, ao escolher o cliente, mostrar apenas os saldos disponíveis.
+- [ ] Ao consumir um plano, descontar atomicamente apenas as unidades utilizadas, por exemplo, consumir 1 Corte de um cliente com 5 Cortes e 5 Barbas deixa 4 Cortes e 5 Barbas; rejeitar consumos sem saldo e preservar o registo auditável.

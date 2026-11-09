@@ -186,3 +186,49 @@ INSERT INTO products (name, price) VALUES
   ('Pomada matte', 12.50), ('Shampoo premium', 10.00), ('Óleo para barba', 14.00),
   ('Cera modeladora', 11.50)
 ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS plans (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  price numeric(12,2) NOT NULL DEFAULT 0 CHECK (price >= 0),
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS plan_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id uuid NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  service_id uuid NOT NULL REFERENCES services(id),
+  quantity integer NOT NULL CHECK (quantity > 0),
+  UNIQUE (plan_id, service_id)
+);
+CREATE TABLE IF NOT EXISTS plan_clients (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id uuid NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS plan_client_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id uuid NOT NULL REFERENCES plan_clients(id) ON DELETE CASCADE,
+  service_id uuid NOT NULL REFERENCES services(id),
+  total_quantity integer NOT NULL CHECK (total_quantity > 0),
+  remaining_quantity integer NOT NULL CHECK (remaining_quantity >= 0 AND remaining_quantity <= total_quantity),
+  UNIQUE (client_id, service_id)
+);
+CREATE TABLE IF NOT EXISTS plan_usages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sale_id uuid NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  client_id uuid NOT NULL REFERENCES plan_clients(id),
+  plan_id uuid NOT NULL REFERENCES plans(id),
+  service_id uuid NOT NULL REFERENCES services(id),
+  service_name_snapshot text NOT NULL,
+  quantity integer NOT NULL CHECK (quantity > 0),
+  used_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS plan_client_id uuid REFERENCES plan_clients(id);
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS plan_id uuid REFERENCES plans(id);
+CREATE INDEX IF NOT EXISTS plan_clients_plan_idx ON plan_clients(plan_id, active);
+CREATE INDEX IF NOT EXISTS plan_client_items_client_idx ON plan_client_items(client_id, service_id);
+CREATE INDEX IF NOT EXISTS plan_usages_client_idx ON plan_usages(client_id, used_at);
